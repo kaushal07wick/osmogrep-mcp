@@ -1,0 +1,3 @@
+interface:
+  display_name: "OsmoGrep verification"
+  short_description: "Reproduce and verify repairs in sandbox workspaces"

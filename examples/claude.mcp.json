@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "osmogrep": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/absolute/path/osmogrep-mcp/cli/mcp.mjs"
+      ]
+    }
+  }
+}
