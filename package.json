@@ -1,6 +1,6 @@
 {
   "name": "osmogrep-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "description": "Sandbox verification tools and an Agent Skill for Codex and Claude Code.",
@@ -13,5 +13,9 @@
     "test": "node scripts/check.mjs",
     "install:codex": "node scripts/install.mjs codex",
     "install:claude": "node scripts/install.mjs claude"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
   }
 }

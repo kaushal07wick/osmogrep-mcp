@@ -65,7 +65,9 @@ export async function beginVerification({repo,base="HEAD",server,output}) {
   }catch(error){await closeVerification(state).catch(()=>{});await writeJSON(join(folder,"error.json"),{error:error.message});throw error;}
 }
 export async function closeVerification(state) {
-  for(const name of ["base","candidate"])if(state[name]?.sandboxId)await api(state,"destroy",{sandboxId:state[name].sandboxId}).catch(()=>{});
+  const results=await Promise.allSettled(["base","candidate"].filter(name=>state[name]?.sandboxId).map(name=>api(state,"destroy",{sandboxId:state[name].sandboxId})));
+  const failures=results.filter(result=>result.status==="rejected");
+  if(failures.length)throw new AggregateError(failures.map(result=>result.reason),"Could not destroy all sandbox VMs. Retry close; the backend lifetime remains the fallback.");
 }
 export function proofStatus(state,base,candidate) {
   const first=state.reproRuns[0],last=state.reproRuns.at(-1);
@@ -77,6 +79,7 @@ export function proofStatus(state,base,candidate) {
   const introduced=first.base.exitCode===0&&first.candidate.exitCode!==0;
   const existingFix=first.base.exitCode!==0&&first.candidate.exitCode===0;
   if(introduced&&(state.reproRuns.length<2||last.base.exitCode!==0||last.candidate.exitCode!==0))return {verified:false,reason:"The introduced failure has not been reproduced and repaired with the same check."};
+  if(existingFix&&(last.base.exitCode===0||last.candidate.exitCode!==0))return {verified:false,reason:"The latest reproducer no longer confirms the existing bug was fixed."};
   if(!introduced&&!existingFix)return {verified:false,reason:"The reproducer did not distinguish base from candidate."};
   return {verified:true,classification:introduced?"introduced-regression-repaired":"existing-bug-fixed",reason:"Identical reproducer, observed differential behavior, and unchanged original suites."};
 }

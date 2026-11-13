@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import {spawn,spawnSync} from "node:child_process";
-import {serverOrigin,relativePath,proofStatus,operation,replayBundle} from "../cli/verification.mjs";
+import {serverOrigin,relativePath,proofStatus,operation,replayBundle,closeVerification} from "../cli/verification.mjs";
 import {mkdtemp,mkdir,writeFile,rm} from "node:fs/promises";
 import {join} from "node:path";
 import {tmpdir} from "node:os";
 import {createHash} from "node:crypto";
+import {Client} from "@modelcontextprotocol/sdk/client/index.js";
+import {StdioClientTransport} from "@modelcontextprotocol/sdk/client/stdio.js";
+import {EmptyResultSchema,LATEST_PROTOCOL_VERSION} from "@modelcontextprotocol/sdk/types.js";
+import {createInterface} from "node:readline";
 import {renderReport} from "../cli/report.mjs";
 
 assert.equal(serverOrigin(),"http://127.0.0.1:3001");
@@ -23,6 +27,17 @@ assert.equal(proofStatus(state,{...base,changedFiles:["src/changed.js"]},candida
 assert.equal(proofStatus(state,base,{...candidate,fingerprint:"later"}).verified,false);
 assert.equal(proofStatus(state,base,{...candidate,validation:{...passing,originalTests:{status:"changed"}}}).verified,false);
 assert.equal(proofStatus({...state,reproRuns:[{...state.reproRuns[1]}]},base,candidate).verified,false,"Both versions passing is not a differential finding");
+const existing={...state,reproRuns:[{base:{exitCode:1,afterFingerprint:"base"},candidate:{exitCode:0,afterFingerprint:"fixed"}}]};
+assert.equal(proofStatus(existing,base,candidate).verified,true);
+assert.equal(proofStatus({...existing,reproRuns:[...existing.reproRuns,{base:{exitCode:1,afterFingerprint:"base"},candidate:{exitCode:1,afterFingerprint:"fixed"}}]},base,candidate).verified,false,"A later failing reproducer invalidates an existing-bug repair");
+assert.equal(proofStatus({...existing,reproRuns:[...existing.reproRuns,{base:{exitCode:0,afterFingerprint:"base"},candidate:{exitCode:0,afterFingerprint:"fixed"}}]},base,candidate).verified,false,"A disappearing differential is inconclusive");
+const cleanupFetch=globalThis.fetch;
+try{
+  const attempts=[];
+  globalThis.fetch=async(url,options)=>{attempts.push(JSON.parse(options.body).sandboxId);return new Response(JSON.stringify({error:"provider unavailable"}),{status:503});};
+  await assert.rejects(closeVerification({server:"http://127.0.0.1:3001",base:{sandboxId:"base"},candidate:{sandboxId:"candidate"}}),/Could not destroy/);
+  assert.deepEqual(attempts,["base","candidate"],"Attempt both cleanups even if one fails");
+}finally{globalThis.fetch=cleanupFetch;}
 const directory=await mkdtemp(join(tmpdir(),"osmogrep-verification-check-"));
 try{
   const file=join(directory,"session.json");
@@ -44,33 +59,55 @@ try{
   await writeFile(join(directory,"replay.json"),JSON.stringify({reproducer:{content:"test",sha256:digest("test")},sourceManifests:{fixed:[{path:"a.js",sha256:digest("original")} ]}}));
   await assert.rejects(replayBundle(directory,"fixed"),/Replay source changed/);
 }finally{await rm(directory,{recursive:true,force:true});}
-const child=spawn(process.execPath,["cli/mcp.mjs","--session","/unused/session.json"],{stdio:["pipe","pipe","pipe"]});
-let text="";child.stdout.on("data",chunk=>text+=chunk);
-child.stdin.end(JSON.stringify({jsonrpc:"2.0",id:1,method:"initialize",params:{protocolVersion:"2025-06-18"}})+"\n"+JSON.stringify({jsonrpc:"2.0",id:2,method:"tools/list"})+"\n");
-await new Promise((resolve,reject)=>{child.on("error",reject);child.on("close",code=>code?reject(new Error("MCP startup failed")):resolve());});
-const messages=text.trim().split("\n").map(line=>JSON.parse(line));
-assert.equal(messages[0].result.protocolVersion,"2025-06-18");
-assert(messages[1].result.tools.some(tool=>tool.name==="compare"));
-assert(!messages[1].result.tools.some(tool=>tool.name==="host_shell"));
-const manager=spawn(process.execPath,["cli/mcp.mjs"],{stdio:["pipe","pipe","pipe"]});
-let managedText="";manager.stdout.on("data",chunk=>managedText+=chunk);
-manager.stdin.end([
-  {jsonrpc:"2.0",id:1,method:"initialize",params:{protocolVersion:"2025-06-18"}},
-  {jsonrpc:"2.0",id:2,method:"tools/list"},
-  {jsonrpc:"2.0",id:3,method:"tools/call",params:{name:"context",arguments:{session:"unknown"}}},
-  {jsonrpc:"2.0",id:4,method:"tools/call",params:{name:"start",arguments:{repo:42,base:"HEAD"}}},
-  {jsonrpc:"2.0",id:5,method:"tools/call",params:{name:"read",arguments:{session:"unknown",revision:"host",path:"etc/passwd"}}},
-].map(value=>JSON.stringify(value)).join("\n")+"\n");
-await new Promise((resolve,reject)=>{manager.on("error",reject);manager.on("close",code=>code?reject(new Error("Managed MCP startup failed")):resolve());});
-const managed=managedText.trim().split("\n").map(line=>JSON.parse(line));
-assert(managed[1].result.tools.some(tool=>tool.name==="start"));
-assert(managed[1].result.tools.some(tool=>tool.name==="close"));
-assert(managed[1].result.tools.find(tool=>tool.name==="write").inputSchema.required.includes("session"));
-assert(managed[2].result.isError);assert.match(managed[2].result.content[0].text,/Unknown session/);
-assert.equal(managed[3].error.code,-32602);
-assert.match(managed[4].error.message,/revision/i);
+const transport=new StdioClientTransport({command:process.execPath,args:["cli/mcp.mjs"],stderr:"pipe"});
+const client=new Client({name:"osmogrep-compatibility-check",version:"1.0.0"});
+try {
+  await client.connect(transport);
+  assert.equal(client.getServerVersion().name,"osmogrep-verification");
+  assert(client.getServerCapabilities().tools);
+  await client.ping();
+  const {tools}=await client.listTools();
+  assert.equal(tools.length,10);
+  assert(!tools.some(tool=>tool.name==="host_shell"));
+  assert(tools.find(tool=>tool.name==="write").inputSchema.required.includes("session"));
+  assert.equal(tools.find(tool=>tool.name==="read").annotations.readOnlyHint,true);
+  assert.equal(tools.find(tool=>tool.name==="command").annotations.destructiveHint,true);
+  for(const [name,args,reason] of [
+    ["context",{session:"unknown"},/Unknown session/],
+    ["start",{repo:42,base:"HEAD"},/Invalid arguments/],
+    ["read",{session:"unknown",revision:"host",path:"etc/passwd"},/Invalid arguments/],
+    ["context",{session:"unknown",extra:"unexpected"},/Invalid arguments/],
+    ["missing_tool",{},/not found/],
+  ]) {
+    const result=await client.callTool({name,arguments:args});
+    assert(result.isError);assert.match(result.content[0].text,reason);
+  }
+  await assert.rejects(client.request({method:"unknown/method"},EmptyResultSchema),error=>error.code===-32601);
+  await client.ping();
+}finally{await client.close();}
+// An unknown client version must negotiate a supported version, never echo it.
+const child=spawn(process.execPath,["cli/mcp.mjs"],{stdio:["pipe","pipe","pipe"]});
+const lines=createInterface({input:child.stdout});
+try {
+  const response=new Promise((resolve,reject)=>{lines.once("line",line=>resolve(JSON.parse(line)));child.once("error",reject);});
+  child.stdin.write(JSON.stringify({jsonrpc:"2.0",id:1,method:"initialize",params:{protocolVersion:"9999-01-01",capabilities:{},clientInfo:{name:"future-client",version:"1"}}})+"\n");
+  assert.equal((await response).result.protocolVersion,LATEST_PROTOCOL_VERSION);
+}finally{child.stdin.end();await new Promise(resolve=>child.once("close",resolve));lines.close();}
+const fixedDirectory=await mkdtemp(join(tmpdir(),"osmogrep-fixed-check-"));
+try {
+  const file=join(fixedDirectory,"session.json");
+  await writeFile(file,JSON.stringify({server:"http://127.0.0.1:3001",changedPaths:["src.js"],candidate:{localSource:{files:[{path:"src.js"}]}},reproRuns:[]}));
+  const fixedClient=new Client({name:"fixed-check",version:"1"});
+  try {
+    await fixedClient.connect(new StdioClientTransport({command:process.execPath,args:["cli/mcp.mjs","--session",file],stderr:"pipe"}));
+    const {tools}=await fixedClient.listTools();assert.equal(tools.length,8);
+    const result=await fixedClient.callTool({name:"context",arguments:{}});
+    assert(!result.isError);assert.deepEqual(result.structuredContent.changedPaths,["src.js"]);
+    assert.deepEqual(JSON.parse(result.content[0].text),result.structuredContent);
+  }finally{await fixedClient.close();}
+}finally{await rm(fixedDirectory,{recursive:true,force:true});}
 const missingBundle=spawnSync(process.execPath,["cli/replay.mjs"],{encoding:"utf8"});
 assert.equal(missingBundle.status,1);assert.match(missingBundle.stderr,/Supply --bundle/);
 const invalidClient=spawnSync(process.execPath,["scripts/install.mjs","unknown"],{encoding:"utf8"});
 assert.equal(invalidClient.status,1);assert.match(invalidClient.stderr,/Usage:/);
-console.log("Verification checks passed: loopback-only transport, confined paths, original-test guards, differential proof, stale rejection and MCP handshake.");
+console.log("Verification checks passed: official SDK client, protocol negotiation, schemas, structured results, method errors, loopback confinement, original-test guards, differential proof, stale rejection and replay integrity.");

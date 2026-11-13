@@ -1,6 +1,9 @@
 ---
 name: osmogrep-verify
 description: Reproduce and verify a runtime regression or proposed repair in OsmoGrep sandbox VMs, preserving original tests and exporting replayable evidence. Use for requested runtime verification and concrete suspected regressions.
+license: MIT
+metadata:
+  requirements: Requires the OsmoGrep MCP connection, Node.js 22.18+, Git and a running local OsmoGrep sandbox service with the target repository allowed.
 ---
 
 Use the calling coding agent for reasoning and repair decisions; OsmoGrep supplies isolated execution and independently checked evidence. A second model run is unnecessary.

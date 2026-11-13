@@ -13,12 +13,21 @@ Requires Node.js 22.18+ and the client CLI you want to connect.
 ```sh
 git clone https://github.com/kaushal07wick/osmogrep-mcp.git
 cd osmogrep-mcp
+npm ci
 node scripts/install.mjs codex
 # Or:
 node scripts/install.mjs claude
 ```
 
 The installer registers a user-scoped stdio MCP server and copies the `osmogrep-verify` skill to your client's skill directory. It uses the current checkout path: keep this directory in place. Client registration uses each client's own CLI and permissions. An existing Claude server with this name may need to be reviewed/removed before reinstalling.
+
+The skill is also discoverable and installable with the [skills.sh CLI](https://skills.sh/docs/cli):
+
+```sh
+npx skills add kaushal07wick/osmogrep-mcp --skill osmogrep-verify -a codex claude-code
+```
+
+This installs project-level instructions only. It does not install the MCP server or sandbox backend; use the checkout and client registration above for execution tools. Add `-g` to the skills command for user-level installation.
 
 Start a new client session, then ask:
 
@@ -82,10 +91,19 @@ Exports are private local files under `.runtime/verifications/` and are excluded
 ## Development
 
 ```sh
+npm ci
 npm test
 ```
 
-No npm dependencies are required. Tests cover the MCP handshake, argument/session boundaries, original-test protection, differential proof checks, stale evidence and replay integrity. They do not boot a VM or call a model API.
+The server uses the official MCP TypeScript SDK and Zod input schemas over stdio. The lockfile pins dependencies for reproducible installs. Tests use the official SDK client and cover version negotiation, tool discovery, strict input validation, structured results, method errors, session boundaries, original-test protection, differential proof checks, stale evidence, cleanup failures and replay integrity. They do not boot a VM or call a model API.
+
+Check interoperability with the official [MCP Inspector](https://modelcontextprotocol.io/docs/tools/inspector):
+
+```sh
+npx @modelcontextprotocol/inspector --cli node cli/mcp.mjs --method tools/list
+```
+
+The skill follows the [Agent Skills specification](https://agentskills.io/specification). Neither compatibility checks nor a skills.sh listing certify production readiness.
 
 Originally extracted from OsmoGrep's local verification prototype. The standalone connector is the install target for coding-agent integrations; it is separate from the Rust terminal application and the hosted PR-review worker.
 
