@@ -10,7 +10,7 @@
   },
   "scripts": {
     "start": "node cli/mcp.mjs",
-    "test": "node scripts/check.mjs",
+    "test": "node scripts/check.mjs && node --test acceptance/session-expiry.test.mjs",
     "install:codex": "node scripts/install.mjs codex",
     "install:claude": "node scripts/install.mjs claude"
   },
