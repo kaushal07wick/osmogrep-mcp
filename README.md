@@ -1,3 +1,9 @@
+# Controlled PR interaction fixture
+
+runBatch must serve every configured worker immediately without queueing; acquireBatch must reject requests over capacity. Pool capacity and configured concurrency may change independently but must preserve this contract.
+
+The original suite intentionally covers configuration only. This is an explicitly labelled evaluation branch; do not merge it into the product default branch.
+
 # OsmoGrep MCP
 
 Give Codex and Claude Code isolated execution tools for reproducing runtime bugs, repairing candidate code and exporting replayable evidence.
