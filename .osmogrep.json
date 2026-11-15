@@ -1,0 +1,4 @@
+{
+  "install": "npm ci --ignore-scripts",
+  "test": "npm test && node --test acceptance/catcher-request-cache.test.mjs"
+}

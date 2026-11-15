@@ -1,3 +1,9 @@
+# Controlled request-cache evaluation
+
+createRequestCache must reuse the same promise for concurrent requests with the same key and retain successful values. A rejected load must propagate the original error and be evicted so a later call with the same key can retry. A failure for one key must not evict successful values for other keys.
+
+This is a labelled isolated evaluation branch, not a proposed default-branch product change.
+
 # OsmoGrep MCP
 
 Give Codex and Claude Code isolated execution tools for reproducing runtime bugs, repairing candidate code and exporting replayable evidence.
