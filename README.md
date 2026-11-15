@@ -1,3 +1,9 @@
+# Controlled Catcher acceptance fixture
+
+The controlled pool fixture must start exactly four ready workers, and every ready worker must hold a unique active pool lease. The supported four-worker configuration must continue to start successfully; reducing worker count is not an acceptable repair.
+
+This branch is a labelled sandbox evaluation fixture, not a change proposed for the MCP product default branch.
+
 # OsmoGrep MCP
 
 Give Codex and Claude Code isolated execution tools for reproducing runtime bugs, repairing candidate code and exporting replayable evidence.
