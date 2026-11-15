@@ -1,3 +1,9 @@
+# Controlled Catcher acceptance fixture
+
+When a task rejects or throws, runWithLease must propagate that same error and release its acquired pool lease before the returned promise settles. Successful tasks must keep their return value. Never swallow errors or skip acquisition to satisfy this contract.
+
+This branch is a labelled sandbox evaluation fixture, not a change proposed for the MCP product default branch.
+
 # OsmoGrep MCP
 
 Give Codex and Claude Code isolated execution tools for reproducing runtime bugs, repairing candidate code and exporting replayable evidence.
