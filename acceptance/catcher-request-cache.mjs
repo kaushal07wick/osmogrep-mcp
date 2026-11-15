@@ -3,10 +3,7 @@ export function createRequestCache() {
   return {
     get(key, load) {
       if (requests.has(key)) return requests.get(key);
-      const request = Promise.resolve().then(load).catch(error => {
-        requests.delete(key);
-        throw error;
-      });
+      const request = Promise.resolve().then(load);
       requests.set(key, request);
       return request;
     },
