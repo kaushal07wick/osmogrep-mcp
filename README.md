@@ -1,3 +1,9 @@
+# Controlled exponential-backoff evaluation
+
+retryDelay accepts a nonnegative integer attempt. Attempt 0 uses baseMs; every next attempt doubles the previous delay, capped at maxMs. Defaults are baseMs=100 and maxMs=5000. Custom base and maximum delays must remain supported.
+
+This is a labelled isolated evaluation branch, not a proposed default-branch product change.
+
 # OsmoGrep MCP
 
 Give Codex and Claude Code isolated execution tools for reproducing runtime bugs, repairing candidate code and exporting replayable evidence.
